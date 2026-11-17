@@ -9,6 +9,7 @@ import { initializeApp } from "firebase/app";
 import {
   initializeAppCheck,
   ReCaptchaV3Provider,
+  CustomProvider,
   getToken as getAppCheckToken,
 } from "firebase/app-check";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
@@ -43,7 +44,18 @@ export function initFirebase() {
     // In production we use reCAPTCHA v3 when a site key is configured.
     if (isLocalhost || !recaptchaSiteKey) {
       self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-      appCheck = initializeAppCheck(app, { isTokenAutoRefreshEnabled: true });
+      // The debug exchange never calls the provider's getToken(), but this
+      // SDK version requires a provider object at init (it calls
+      // provider.initialize unconditionally), so pass a stub that must
+      // never actually run.
+      appCheck = initializeAppCheck(app, {
+        provider: new CustomProvider({
+          getToken: async () => {
+            throw new Error("CustomProvider stub must not run in debug mode");
+          },
+        }),
+        isTokenAutoRefreshEnabled: true,
+      });
     } else {
       appCheck = initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider(recaptchaSiteKey),
