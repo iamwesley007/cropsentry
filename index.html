@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CropSentry — Offline-first crop health scouting</title>
+    <meta
+      name="description"
+      content="CropSentry scouts crop health with on-device AI (Gemini Nano in Chrome via Firebase AI Logic) and escalates to cloud Gemini only when the case needs depth. Private, free, and works where the signal doesn't."
+    />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C9 8 5 13 5 19a11 11 0 0 0 22 0c0-6-4-11-11-16z' fill='%232e7d32'/%3E%3Cpath d='M16 8v17M16 14l5-3M16 18l-5-3' stroke='%23e8f5e9' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">🌿</span>
+          <div>
+            <strong>CropSentry</strong>
+            <span class="brand-sub">Field scouting, on-device first</span>
+          </div>
+        </div>
+        <div class="topbar-status">
+          <span id="enginePill" class="pill pill-muted">Engine: checking…</span>
+          <span id="configPill" class="pill pill-muted">Config: checking…</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="demoBanner" class="demo-banner" hidden>
+      <div class="wrap">
+        <strong>DEMO MODE</strong> — no Firebase config found, so results below
+        come from a built-in sample engine, not real AI. Add your Firebase
+        config (see <code>SETUP.md</code>) to run real hybrid inference.
+      </div>
+    </div>
+
+    <main class="wrap">
+      <section class="hero">
+        <h1>Crop health, assessed where the signal doesn&rsquo;t reach.</h1>
+        <p class="hero-lede">
+          Photograph a plant. Gemini&nbsp;Nano — running <em>on the device</em>
+          in Chrome through Firebase AI Logic — reads the leaf privately,
+          offline, and free. When a case is severe or uncertain, escalate to
+          cloud Gemini for the full agronomist report. You always see which
+          engine answered, and why.
+        </p>
+        <ul class="hero-points">
+          <li><strong>Private</strong> — field photos never leave the device for routine checks</li>
+          <li><strong>Offline-ready</strong> — on-device analysis works with no connection</li>
+          <li><strong>Honest hybrid</strong> — every answer is labelled on-device or cloud</li>
+        </ul>
+      </section>
+
+      <section class="panel" id="enginePanel" aria-label="Hybrid engine">
+        <div class="panel-head">
+          <h2>Hybrid engine</h2>
+          <span id="availabilityText" class="muted">Detecting on-device model…</span>
+        </div>
+        <div class="engine-grid">
+          <div>
+            <label class="field-label" for="modeSelect">Inference mode</label>
+            <select id="modeSelect">
+              <option value="prefer_on_device">Prefer on-device (fallback to cloud)</option>
+              <option value="only_on_device">On-device only (no cloud fallback)</option>
+              <option value="prefer_in_cloud">Prefer cloud (fallback to on-device)</option>
+              <option value="only_in_cloud">Cloud only</option>
+            </select>
+            <p class="field-help">
+              The analysis below runs under this mode. The agronomist report
+              always runs in the cloud — that escalation is the scout&rsquo;s choice.
+            </p>
+          </div>
+          <div>
+            <label class="field-label">On-device model</label>
+            <div class="device-row">
+              <button id="prepareBtn" class="btn btn-secondary" type="button">
+                Prepare on-device model
+              </button>
+              <span id="prepareStatus" class="muted">Not prepared yet</span>
+            </div>
+            <progress id="downloadProgress" max="1" value="0" hidden></progress>
+            <p class="field-help">
+              First use downloads Gemini&nbsp;Nano into Chrome (desktop Chrome
+              139+, Prompt API flag on). Afterwards it stays on the device.
+            </p>
+          </div>
+          <div class="stats" aria-label="Inference statistics">
+            <div class="stat"><span id="statOnDevice">0</span><label>on-device</label></div>
+            <div class="stat"><span id="statInCloud">0</span><label>cloud</label></div>
+            <div class="stat"><span id="statTokens">0</span><label>cloud tokens</label></div>
+            <div class="stat"><span id="statReports">0</span><label>reports</label></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="layout">
+        <section class="panel" aria-label="New scout">
+          <div class="panel-head">
+            <h2>New scout</h2>
+            <span class="muted">Step 1 of 2</span>
+          </div>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Add a crop photo">
+            <div id="dropzoneEmpty">
+              <span class="dropzone-icon" aria-hidden="true">📷</span>
+              <p><strong>Drop a crop photo here</strong> or click to choose one</p>
+              <p class="muted small">JPEG or PNG works best on-device. Other formats are converted automatically.</p>
+            </div>
+            <img id="photoPreview" alt="Crop photo preview" hidden />
+            <input id="photoInput" type="file" accept="image/*" hidden />
+          </div>
+          <div class="row-between">
+            <button id="sampleBtn" class="btn btn-text" type="button">Try a sample photo instead</button>
+            <button id="clearPhotoBtn" class="btn btn-text" type="button" hidden>Remove photo</button>
+          </div>
+
+          <label class="field-label" for="cropInput">Crop</label>
+          <input id="cropInput" list="cropList" type="text" placeholder="e.g. Maize, Cassava, Tomato…" autocomplete="off" />
+          <datalist id="cropList">
+            <option value="Maize"></option>
+            <option value="Cassava"></option>
+            <option value="Tomato"></option>
+            <option value="Rice"></option>
+            <option value="Yam"></option>
+            <option value="Pepper"></option>
+            <option value="Okra"></option>
+            <option value="Cowpea"></option>
+            <option value="Sorghum"></option>
+            <option value="Groundnut"></option>
+          </datalist>
+
+          <label class="field-label" for="notesInput">Field notes <span class="muted">(optional)</span></label>
+          <textarea id="notesInput" rows="2" placeholder="e.g. Spreading fast since the last rain; lower leaves worst."></textarea>
+
+          <label class="field-label" for="plotInput">Plot / location <span class="muted">(optional)</span></label>
+          <input id="plotInput" type="text" placeholder="e.g. North field, row 12" />
+
+          <button id="analyzeBtn" class="btn btn-primary btn-block" type="button" disabled>
+            Analyze on-device
+          </button>
+          <p id="analyzeHint" class="field-help">Add a photo to start the analysis.</p>
+          <p id="analyzeError" class="error" role="alert" hidden></p>
+        </section>
+
+        <section class="panel" id="resultPanel" aria-label="Analysis result" aria-live="polite">
+          <div class="panel-head">
+            <h2>Field analysis</h2>
+            <span class="muted">Step 2 of 2</span>
+          </div>
+          <div id="resultEmpty" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">🔍</span>
+            <p>No analysis yet. Add a photo and run the scout — the result lands here, labelled with the engine that produced it.</p>
+          </div>
+          <div id="resultBusy" class="busy" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <p id="busyText">Analyzing…</p>
+          </div>
+          <div id="resultBody" hidden></div>
+        </section>
+      </div>
+
+      <section class="panel" aria-label="Field log">
+        <div class="panel-head">
+          <h2>Field log</h2>
+          <span id="logCount" class="muted">0 entries</span>
+        </div>
+        <div id="logEmpty" class="empty-state">
+          <p>Nothing logged yet. Completed scouts appear here — stored on this device, and mirrored to Firestore when a Firebase project is connected.</p>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </section>
+
+      <section class="panel how" aria-label="How the hybrid works">
+        <h2>How the hybrid works</h2>
+        <ol class="how-steps">
+          <li>
+            <strong>Routine checks stay on-device.</strong> The photo and notes go
+            to Gemini&nbsp;Nano inside Chrome through Firebase AI Logic. Nothing
+            is uploaded, nothing is billed, and it works offline.
+          </li>
+          <li>
+            <strong>The fallback is automatic.</strong> On browsers without an
+            on-device model, the same request runs against cloud Gemini — same
+            prompt, same structured result, labelled as cloud.
+          </li>
+          <li>
+            <strong>Depth is a deliberate escalation.</strong> Severe or uncertain
+            cases get a full agronomist report from the cloud model, only when
+            the scout asks for it.
+          </li>
+        </ol>
+        <p class="muted small">
+          Built for the #BuildHybridAI 2026 hackathon. On-device inference
+          requires desktop Chrome 139+ with the Prompt API flag enabled.
+          Cloud fallback needs a Firebase project with AI Logic enabled —
+          see <code>SETUP.md</code>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="wrap footer">
+      <p class="muted small">
+        CropSentry · Original work by Oguinye Nelson Ifeanyichukwu · MIT licensed ·
+        AI assessments support, not replace, professional agronomic advice.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
